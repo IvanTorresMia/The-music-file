@@ -1,0 +1,40 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:14
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: the_music_file_user
+      POSTGRES_PASSWORD: the_music_file_password
+      POSTGRES_DB: the_music_file_db
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+
+  web:
+    build:
+      context: .
+      target: development # ← use the dev stage
+    depends_on:
+      - db
+    ports:
+      - '3006:3000'
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - .:/app # mount your source for hot-reload
+      - node_modules:/app/node_modules # preserve deps
+      - pnpm_store:/app/.pnpm-store # preserve pnpm store
+    command:
+      - pnpm
+      - dev
+
+volumes:
+  db_data:
+  node_modules:
+  pnpm_store:
