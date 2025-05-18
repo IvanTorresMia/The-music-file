@@ -1,30 +1,40 @@
+// src/server/router.ts
 import { initTRPC, TRPCError } from '@trpc/server';
 import { Context } from './context';
 import { z } from 'zod';
 
-// initializing tRPC but with Prisma context
+// 1) Initialize tRPC with our Context type
 const t = initTRPC.context<Context>().create();
 
+// 2) Public (unprotected) procedure
+export const publicProcedure = t.procedure;
+
+// 3) Middleware to enforce authentication
 const isAuthed = t.middleware(({ ctx, next }) => {
-  if (!ctx.session || !ctx.session.user)
+  if (!ctx.session?.user) {
     throw new TRPCError({ code: 'UNAUTHORIZED' });
-  return next({ ctx: { ...ctx, user: ctx.session.user } });
+  }
+  // we can pass the user into downstream resolvers:
+  return next({
+    ctx: {
+      ...ctx,
+      user: ctx.session.user,
+    },
+  });
 });
 
-export const authedProcedure = t.procedure.use(isAuthed);
+// 4) Protected procedure that uses the middleware
+export const protectedProcedure = t.procedure.use(isAuthed);
 
+// 5) Build the app router
 export const appRouter = t.router({
-  // this is just examples, you will build according to the app needs
-  // example: fetch all users
-  listUsers: t.procedure.query(async ({ ctx }) => {
+  // Public: list all users
+  listUsers: publicProcedure.query(({ ctx }) => {
     return ctx.prisma.user.findMany();
   }),
 
-  //only signed-in users
-  me: authedProcedure.query(({ ctx }) => ctx.session!.user),
-
-  // example: create a user
-  createUser: t.procedure
+  // Public: create a new user (sign-up)
+  createUser: publicProcedure
     .input(
       z.object({
         firstName: z.string().min(1),
@@ -34,9 +44,19 @@ export const appRouter = t.router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      // here you’d hash input.password before saving in production
+      // In production: hash `input.password` before saving
       return ctx.prisma.user.create({ data: input });
     }),
+
+  // Protected: return the current logged-in user
+  me: protectedProcedure.query(({ ctx }) => {
+    return ctx.session!.user;
+  }),
+
+  // Protected: an example secret endpoint
+  getSecretData: protectedProcedure.query(() => {
+    return { secret: '🎉 you got it!' };
+  }),
 });
 
 export type AppRouter = typeof appRouter;

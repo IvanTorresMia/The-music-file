@@ -50,6 +50,15 @@ export const authOptions: NextAuthOptions = {
       console.log('🔗 account linked:', account.provider, '→', user.id);
     },
   },
+  callbacks: {
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith(baseUrl)) {
+        return url;
+      }
+
+      return `${baseUrl}/dashboard`;
+    },
+  },
 
   secret: process.env.NEXTAUTH_SECRET,
 };
