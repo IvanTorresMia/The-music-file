@@ -1,87 +1,94 @@
-# Standard Boilerplate: Next.js + tRPC + Prisma + PostgreSQL + Docker
+# Full App Boilerplate Guide
 
-A step-by-step reference to scaffold and run a full-stack Next.js application with tRPC, Prisma, PostgreSQL (in Docker), and React-Query.
+A single reference for bootstrapping a Next.js + tRPC + Prisma + PostgreSQL + Docker app, adding Google OAuth + Credentials with NextAuth.js, and protecting your routes.
 
----
+````markdown
+# App Boilerplate Guide
 
-## 1. Scaffold a new Next.js app
+## 1. Scaffold Next.js
 
-\`\`\`bash
-pnpm create next-app@latest my-app \
-  --ts \
-  --app \
-  --eslint \
-  --tailwind \
-  --src-dir \
-  --import-alias="@/*" \
-  --experimental-turbo
-cd my-app
-\`\`\`
+```bash
+pnpm create next-app@latest my-app
+# ✓ TypeScript
+# ✓ ESLint
+# ✓ Tailwind CSS
+# ✓ src/ directory
+# ✓ App Router
+# ✓ Turbopack (optional)
+# ✓ Custom import alias (@/*)
+````
 
----
+If files land in `my-app/my-app`, move them up:
 
-## 2. Install core dependencies
+```bash
+mv my-app/my-app/* my-app/
+rm -rf my-app/my-app
+```
 
-\`\`\`bash
-pnpm add @trpc/server @trpc/client @trpc/react-query zod
-pnpm add @prisma/client prisma
-pnpm add @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
-pnpm add @tanstack/react-query
-\`\`\`
+## 2. Environment & Git
 
----
+```bash
+git init
+cp .env.example .env
+```
 
-## 3. Environment configuration
+`.env` at project root:
 
-Create a single \`.env\` in project root:
+```env
+# Database
+DATABASE_URL="postgres://user:pass@db:5432/dbname"
+# NextAuth
+NEXTAUTH_URL=http://localhost:3006
+NEXTAUTH_SECRET=super-secret
+# AWS (later)
+# AWS_ACCESS_KEY_ID=...
+# AWS_SECRET_ACCESS_KEY=...
+```
 
-\`\`\`dotenv
-DATABASE_URL=postgres://the_music_file_user:the_music_file_password@db:5432/the_music_file_db?schema=public
-# AWS_ACCESS_KEY_ID=
-# AWS_SECRET_ACCESS_KEY=
-# AWS_REGION=
-# S3_BUCKET_NAME=
-\`\`\`
+## 3. Docker & Docker Compose
 
----
+**docker-compose.yml**:
 
-## 4. Prisma setup
+```yaml
+version: '3.8'
+services:
+  db:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: dbname
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
 
-1. Initialize Prisma:
+  web:
+    build:
+      context: .
+      target: development
+    depends_on:
+      - db
+    ports:
+      - '3006:3000'
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - pnpm_store:/app/.pnpm-store
+    command: ["pnpm", "dev", "--", "--hostname", "0.0.0.0"]
 
-   \`\`\`bash
-   npx prisma init
-   \`\`\`
+volumes:
+  db_data:
+  node_modules:
+  pnpm_store:
+```
 
-2. Update \`prisma/schema.prisma\`:
+**Dockerfile** (multi-stage):
 
-   \`\`\`prisma
-   datasource db {
-     provider = "postgresql"
-     url      = env("DATABASE_URL")
-   }
-
-   generator client {
-     provider      = "prisma-client-js"
-     binaryTargets = ["native", "linux-musl", "linux-musl-arm64-openssl-3.0.x"]
-   }
-
-   model User { ... }
-   model Account { ... }
-   \`\`\`
-
-3. Generate client locally:
-
-   \`\`\`bash
-   npx prisma generate
-   \`\`\`
-
----
-
-## 5. Dockerize: Dockerfile
-
-\`\`\`dockerfile
-# 1. Build stage
+```dockerfile
+# Builder
 FROM node:24-alpine AS builder
 WORKDIR /app
 RUN npm install -g pnpm && pnpm config set store-dir /app/.pnpm-store
@@ -91,7 +98,7 @@ RUN pnpm install --frozen-lockfile && npx prisma generate
 COPY . .
 RUN pnpm build
 
-# 2. Development stage
+# Development
 FROM node:24-alpine AS development
 WORKDIR /app
 RUN npm install -g pnpm && pnpm config set store-dir /app/.pnpm-store
@@ -99,9 +106,9 @@ COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma
 RUN pnpm install && npx prisma generate
 COPY . .
-CMD ["pnpm", "dev", "--", "--hostname", "0.0.0.0"]
+CMD ["pnpm","dev","--","--hostname","0.0.0.0"]
 
-# 3. Production stage
+# Production
 FROM node:24-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
@@ -111,179 +118,137 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.ts ./
 EXPOSE 3000
-CMD ["pnpm", "start"]
-\`\`\`
+CMD ["pnpm","start"]
+```
 
----
+## 4. Prisma Setup
 
-## 6. Docker Compose
+```bash
+pnpm add -D prisma
+pnpm add @prisma/client
+npx prisma init
+```
 
-\`\`\`yaml
-version: "3.8"
-services:
-  db:
-    image: postgres:14
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: the_music_file_user
-      POSTGRES_PASSWORD: the_music_file_password
-      POSTGRES_DB: the_music_file_db
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+Edit `prisma/schema.prisma`:
 
-  web:
-    build:
-      context: .
-      target: development
-    depends_on:
-      - db
-    ports:
-      - "3006:3000"
-    env_file:
-      - .env
-    environment:
-      - NODE_ENV=development
-    volumes:
-      - .:/app
-      - node_modules:/app/node_modules
-      - pnpm_store:/app/.pnpm-store
-    command:
-      - pnpm
-      - dev
+```prisma
+datasource db { provider = "postgresql" url = env("DATABASE_URL") }
+generator client { provider = "prisma-client-js" binaryTargets = ["native","linux-musl","linux-musl-arm64-openssl-3.0.x"] }
 
-volumes:
-  db_data:
-  node_modules:
-  pnpm_store:
-\`\`\`
+model User { /* your fields... */ accounts Account[] sessions Session[] }
+model Account { /* fields, use @map for snake_case */ }
+model Session { /* fields, use @map */ }
+model VerificationToken { /* as generated */ }
+```
 
----
+Run migration & generate:
 
-## 7. Bring up Docker
-
-\`\`\`bash
-docker-compose down -v
-docker-compose up -d --build
-\`\`\`
-
----
-
-## 8. Run Prisma migrations
-
-\`\`\`bash
+```bash
+docker-compose up -d
 docker-compose exec web npx prisma migrate dev --name init
-\`\`\`
+docker-compose exec web npx prisma generate
+```
 
----
+## 5. tRPC Setup
 
-## 9. tRPC backend
+```bash
+pnpm add @trpc/server @trpc/client @trpc/react-query zod @tanstack/react-query
+```
 
-### \`server/context.ts\`
-\`\`\`ts
-import { PrismaClient } from "@prisma/client";
-import { type CreateNextContextOptions } from "@trpc/server/adapters/next";
+* `src/server/prisma.ts`: export `new PrismaClient()`
+* `src/server/context.ts`: `createContext({ req,res })` returning `{ prisma }`
+* `src/server/router.ts`: `initTRPC.context<Context>().create()` with procedures
+* `app/api/trpc/[...trpc]/route.ts`: Next.js API handler
+* `app/utils/trpc.ts`: createTRPCReact()
+* `app/providers.tsx`: wrap `<trpc.Provider>` & `<QueryClientProvider>` around `<html>`
 
-const prisma = new PrismaClient();
-export async function createContext(_opts: CreateNextContextOptions) {
-  return { prisma };
+## 6. Start the App
+
+```bash
+docker-compose up -d --build
+```
+
+Visit `http://localhost:3006` to confirm Next.js is running.
+
+## 7. Google & Credentials Auth (NextAuth)
+
+```bash
+pnpm add next-auth @next-auth/prisma-adapter bcrypt
+```
+
+### 7.1 Update Prisma Schema
+
+In `schema.prisma`, make fields optional and map snake\_case:
+
+```prisma
+model User { firstName String? lastName String? name String? image String? emailVerified DateTime? /* ... */ }
+model Account { /* camelCase @map("snake_case") for accessToken, expiresAt, etc. */ }
+model Session { sessionToken String @map("session_token") userId String @map("user_id") /* ... */ }
+```
+
+```bash
+docker-compose exec web npx prisma migrate dev --name auth_models
+docker-compose exec web npx prisma generate
+```
+
+### 7.2 Configure NextAuth
+
+`src/pages/api/auth/[...nextauth].ts`:
+
+```ts
+import NextAuth, { NextAuthOptions } from 'next-auth';
+import GoogleProvider from 'next-auth/providers/google';
+import CredentialsProvider from 'next-auth/providers/credentials';
+import { PrismaAdapter } from '@next-auth/prisma-adapter';
+import bcrypt from 'bcrypt';
+import { prisma } from '@/server/prisma';
+
+export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(prisma),
+  session: { strategy: 'database' },
+  providers: [
+    CredentialsProvider({ /* authorize with email/password */ }),
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      allowDangerousEmailAccountLinking: true,
+    }),
+  ],
+  pages: { signIn: '/auth/signin', error: '/auth/error' },
+  events: { async linkAccount({ user, account }) { console.log('🔗', account.provider, '→', user.id) } },
+  secret: process.env.NEXTAUTH_SECRET,
+};
+export default NextAuth(authOptions);
+```
+
+### 7.3 Create Auth Pages
+
+* \`\`: Buttons to `signIn('google')` and credentials form.
+* \`\`: Display `error` from URL.
+
+## 8. Protect Routes
+
+### Server Components
+
+```ts
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/pages/api/auth/[...nextauth]';
+export default async function Dashboard() {
+  const session = await getServerSession(authOptions);
+  if (!session) redirect('/auth/signin');
+  return <div>Welcome, {session.user.email}</div>;
 }
-export type Context = Awaited<ReturnType<typeof createContext>>;
-\`\`\`
+```
 
-### \`server/router.ts\`
-\`\`\`ts
-import { initTRPC } from "@trpc/server";
-import { Context } from "./context";
-import { z } from "zod";
+### tRPC Middleware
 
+```ts
 const t = initTRPC.context<Context>().create();
-export const appRouter = t.router({
-  listUsers: t.procedure.query(({ ctx }) => ctx.prisma.user.findMany()),
-  createUser: t.procedure
-    .input(z.object({
-      firstName: z.string().min(1),
-      lastName: z.string().min(1),
-      email: z.string().email(),
-      password: z.string().min(6),
-    }))
-    .mutation(({ input, ctx }) =>
-      ctx.prisma.user.create({ data: input })
-    ),
+const isAuthed = t.middleware(({ ctx, next }) => {
+  if (!ctx.session) throw new TRPCError({ code: 'UNAUTHORIZED' });
+  return next({ ctx: { ...ctx, user: ctx.session.user } });
 });
-export type AppRouter = typeof appRouter;
-\`\`\`
+```
 
----
-
-## 10. tRPC API route (Pages Router)
-
-Create \`src/pages/api/trpc/[...trpc].ts\`:
-\`\`\`ts
-import { createNextApiHandler } from "@trpc/server/adapters/next";
-import { appRouter } from "@/server/router";
-import { createContext } from "@/server/context";
-
-export default createNextApiHandler({
-  router: appRouter,
-  createContext,
-});
-\`\`\`
-
----
-
-## 11. tRPC client & React-Query
-
-### \`app/utils/trpc.ts\`
-\`\`\`ts
-import { createTRPCReact } from "@trpc/react-query";
-import type { AppRouter } from "@/server/router";
-export const trpc = createTRPCReact<AppRouter>();
-\`\`\`
-
-### \`app/providers.tsx\`
-\`\`\`tsx
-"use client";
-import { ReactNode } from "react";
-import { trpc } from "../utils/trpc";
-import { httpBatchLink } from "@trpc/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-
-const queryClient = new QueryClient();
-const trpcClient = trpc.createClient({
-  links: [httpBatchLink({ url: "/api/trpc" })],
-});
-
-export function Providers({ children }: { children: React.ReactNode }) {
-  return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </trpc.Provider>
-  );
-}
-\`\`\`
-
----
-
-## 12. Wrap your root layout
-
-In \`app/layout.tsx\`:
-\`\`\`tsx
-import "./globals.css";
-import { Providers } from "./providers";
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <body>
-        <Providers>{children}</Providers>
-      </body>
-    </html>
-  );
-}
-\`\`\`
-
----
-
-Your boilerplate is now ready to clone for future projects.
+```
+```
