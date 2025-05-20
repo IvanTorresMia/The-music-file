@@ -1,7 +1,7 @@
 'use client';
 
 import { signOut, useSession } from 'next-auth/react';
-import { Button } from '@/components/Button';
+import { Button } from '@/components/ui/Button';
 
 export function LogoutButton() {
   const { data: session } = useSession();
@@ -9,7 +9,7 @@ export function LogoutButton() {
 
   return (
     <Button
-      variant="danger"
+      variant="secondary"
       onClick={() => signOut({ callbackUrl: '/auth/signin?logout=true' })}
     >
       Sign Out
